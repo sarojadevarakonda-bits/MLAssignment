@@ -4,8 +4,10 @@ import numpy as np
 import pickle
 import os
 from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
+import urllib.request
 
 # Set page config
 st.set_page_config(
@@ -58,7 +60,31 @@ def load_models():
     
     return models, scaler, results
 
+# Load test data from UCI
+@st.cache_resource
+def load_test_data():
+    try:
+        url = "https://archive.ics.uci.edu/ml/machine-learning-databases/breast-cancer-wisconsin/wdbc.data"
+        data = pd.read_csv(url, header=None)
+        
+        # Extract features and target
+        X = data.iloc[:, 2:32].values
+        y = data.iloc[:, 1].map({'M': 1, 'B': 0}).values
+        
+        # Convert to DataFrame for easier handling
+        X = pd.DataFrame(X)
+        
+        # Split data (80-20 split)
+        from sklearn.model_selection import train_test_split
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        return X_test, y_test
+    except Exception as e:
+        st.error(f"Error loading test data: {str(e)}")
+        return None, None
+
 models, scaler, results = load_models()
+X_test, y_test = load_test_data()
 
 # Sidebar
 st.sidebar.header("Configuration")
@@ -122,14 +148,29 @@ with tab2:
         - **True Positives (TP):** Correctly predicted Malignant cases
         """)
         
-        try:
-            confusion_img_path = os.path.join(os.path.dirname(__file__), 'confusion_matrices.png')
-            if os.path.exists(confusion_img_path):
-                st.image(confusion_img_path, caption="Confusion Matrices for All 6 Models", use_column_width=True)
-            else:
-                st.info("📊 Confusion matrices visualization not available locally")
-        except Exception as e:
-            st.warning(f"Could not load confusion matrices image: {str(e)}")
+        if X_test is not None and y_test is not None:
+            # Generate confusion matrices for all models
+            fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+            axes = axes.flatten()
+            
+            model_names = list(models.keys())
+            for idx, model_name in enumerate(model_names):
+                model = models[model_name]
+                X_test_scaled = scaler.transform(X_test)
+                y_pred = model.predict(X_test_scaled)
+                cm = confusion_matrix(y_test, y_pred)
+                
+                sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=axes[idx], 
+                           xticklabels=['Benign', 'Malignant'], 
+                           yticklabels=['Benign', 'Malignant'])
+                axes[idx].set_title(f'{model_name}')
+                axes[idx].set_ylabel('True Label')
+                axes[idx].set_xlabel('Predicted Label')
+            
+            plt.tight_layout()
+            st.pyplot(fig)
+        else:
+            st.warning("Could not load test data for confusion matrices")
 
 # Tab 3: Data Upload & Prediction
 with tab3:
