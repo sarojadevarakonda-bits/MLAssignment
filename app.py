@@ -4,7 +4,6 @@ import numpy as np
 import pickle
 import os
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import confusion_matrix, classification_report
 import matplotlib.pyplot as plt
 import seaborn as sns
 
@@ -70,7 +69,7 @@ selected_model = st.sidebar.selectbox(
 )
 
 # Create tabs
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Model Metrics", "📈 Performance Comparison", "📁 Data Upload & Prediction", "ℹ️ About Dataset"])
+tab1, tab2, tab3 = st.tabs(["📊 Model Metrics", "📈 Performance Comparison", "📁 Data Upload & Prediction"])
 
 # Tab 1: Model Metrics
 with tab1:
@@ -113,35 +112,31 @@ with tab2:
         st.subheader("All Models Metrics Comparison")
         st.dataframe(results_df)
         
-        # Comparison charts
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Accuracy Comparison")
-            fig, ax = plt.subplots(figsize=(10, 6))
-            results_df['Accuracy'].sort_values(ascending=False).plot(kind='bar', ax=ax, color='steelblue')
-            ax.set_ylabel('Accuracy')
-            ax.set_title('Model Accuracy Comparison')
-            ax.set_ylim([0, 1])
-            ax.tick_params(axis='x', rotation=45)
-            st.pyplot(fig)
-        
-        with col2:
-            st.subheader("AUC Score Comparison")
-            fig, ax = plt.subplots(figsize=(10, 6))
-            results_df['AUC'].sort_values(ascending=False).plot(kind='bar', ax=ax, color='coral')
-            ax.set_ylabel('AUC Score')
-            ax.set_title('Model AUC Comparison')
-            ax.set_ylim([0, 1])
-            ax.tick_params(axis='x', rotation=45)
-            st.pyplot(fig)
-        
         # Multi-metric heatmap
         st.subheader("Metrics Heatmap")
         fig, ax = plt.subplots(figsize=(12, 6))
         sns.heatmap(results_df, annot=True, fmt='.4f', cmap='YlGnBu', ax=ax, cbar_kws={'label': 'Score'})
         ax.set_title('Heatmap of All Metrics for All Models')
         st.pyplot(fig)
+        
+        # Confusion Matrices Visualization
+        st.subheader("Confusion Matrices for All Models")
+        st.markdown("""
+        **Confusion Matrix Components:**
+        - **True Negatives (TN):** Correctly predicted Benign cases
+        - **False Positives (FP):** Benign cases incorrectly predicted as Malignant
+        - **False Negatives (FN):** Malignant cases missed (most critical in medical diagnosis)
+        - **True Positives (TP):** Correctly predicted Malignant cases
+        """)
+        
+        try:
+            confusion_img_path = os.path.join(os.path.dirname(__file__), 'confusion_matrices.png')
+            if os.path.exists(confusion_img_path):
+                st.image(confusion_img_path, caption="Confusion Matrices for All 6 Models", use_column_width=True)
+            else:
+                st.info("📊 Confusion matrices visualization not available locally")
+        except Exception as e:
+            st.warning(f"Could not load confusion matrices image: {str(e)}")
 
 # Tab 3: Data Upload & Prediction
 with tab3:
@@ -201,66 +196,3 @@ with tab3:
         
         **CSV Format:** Each row is a sample, each column is a feature (no header recommended)
         """)
-
-# Tab 4: About Dataset
-with tab4:
-    st.header("About the Dataset")
-    
-    st.subheader("Breast Cancer Wisconsin (Diagnostic) Dataset")
-    st.markdown("""
-    ### Dataset Information:
-    - **Source:** University of Wisconsin
-    - **Instances:** 569 samples
-    - **Features:** 30 features
-    - **Target:** Binary Classification (Malignant=1, Benign=0)
-    
-    ### Features Description:
-    Each sample has 10 real-valued features computed for each cell nucleus:
-    1. Radius (mean distance from center to points on the perimeter)
-    2. Texture (standard deviation of gray-scale values)
-    3. Perimeter
-    4. Area
-    5. Smoothness (local variation in radius lengths)
-    6. Compactness (perimeter² / area - 1.0)
-    7. Concavity (severity of concave portions of the contour)
-    8. Concave points (number of concave portions)
-    9. Symmetry
-    10. Fractal dimension ("coastline approximation" - 1)
-    
-    For each feature, the mean, standard error, and "worst" (mean of 3 worst values) are computed,
-    resulting in 30 features total.
-    
-    ### Classes:
-    - **Benign (0):** 357 samples
-    - **Malignant (1):** 212 samples
-    """)
-    
-    st.subheader("Models Implemented")
-    st.markdown("""
-    1. **Logistic Regression** - Linear classification model
-    2. **Decision Tree** - Tree-based model with max_depth=10
-    3. **K-Nearest Neighbors (KNN)** - Instance-based learner with k=5
-    4. **Naive Bayes (Gaussian)** - Probabilistic classifier
-    5. **Random Forest** - Ensemble of 100 decision trees
-    6. **XGBoost** - Gradient boosting ensemble with 100 estimators
-    """)
-    
-    st.subheader("Evaluation Metrics")
-    st.markdown("""
-    - **Accuracy:** Proportion of correct predictions
-    - **AUC Score:** Area under the ROC curve
-    - **Precision:** True positives / (true positives + false positives)
-    - **Recall:** True positives / (true positives + false negatives)
-    - **F1 Score:** Harmonic mean of precision and recall
-    - **MCC Score:** Matthews Correlation Coefficient for binary classification
-    """)
-
-# Footer
-st.divider()
-st.markdown("""
----
-<div style='text-align: center'>
-    <p>ML Classification Models Assignment | BITS Pilani</p>
-    <p>Deployed on Streamlit Cloud ☁️</p>
-</div>
-""", unsafe_allow_html=True)
