@@ -112,13 +112,6 @@ with tab2:
         st.subheader("All Models Metrics Comparison")
         st.dataframe(results_df)
         
-        # Multi-metric heatmap
-        st.subheader("Metrics Heatmap")
-        fig, ax = plt.subplots(figsize=(12, 6))
-        sns.heatmap(results_df, annot=True, fmt='.4f', cmap='YlGnBu', ax=ax, cbar_kws={'label': 'Score'})
-        ax.set_title('Heatmap of All Metrics for All Models')
-        st.pyplot(fig)
-        
         # Confusion Matrices Visualization
         st.subheader("Confusion Matrices for All Models")
         st.markdown("""
