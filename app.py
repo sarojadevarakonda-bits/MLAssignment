@@ -186,7 +186,7 @@ with tab1:
     st.subheader("1️⃣ Model Performance Metrics")
     
     if results and selected_model in results:
-        st.markdown("**📈 Metrics for Selected Model**")
+        st.markdown(f"**📈 Metrics for {selected_model}**")
         metrics = results[selected_model]
         
         col_a, col_b, col_c = st.columns(3)
