@@ -8,6 +8,35 @@ from sklearn.metrics import confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
 import urllib.request
+import requests
+
+# Get base features from UCI names file
+@st.cache_resource
+def get_base_features():
+    try:
+        names_url = "https://archive.ics.uci.edu/ml/machine-learning-databases/breast-cancer-wisconsin/wdbc.names"
+        response = requests.get(names_url, verify=False)
+        
+        base_features = []
+        for line in response.text.split('\n'):
+            if ':' in line and line[0].isdigit():
+                # Extract feature description (e.g., "1) radius_mean")
+                parts = line.split(')')
+                if len(parts) > 1:
+                    feature_desc = parts[1].strip().lower()
+                    # Remove prefixes (mean, se, worst) to get base name
+                    for prefix in ['_mean', '_se', '_worst']:
+                        feature_desc = feature_desc.replace(prefix, '')
+                    
+                    if feature_desc and feature_desc not in base_features:
+                        base_features.append(feature_desc.replace(' ', '_'))
+        
+        # Return unique base features (first 10)
+        return sorted(list(set(base_features)))[:10] if base_features else None
+    except:
+        return None
+
+BASE_FEATURES = get_base_features()
 
 # Set page config
 st.set_page_config(
@@ -83,150 +112,210 @@ def load_test_data():
         st.error(f"Error loading test data: {str(e)}")
         return None, None
 
+# Get feature names from UCI names file
+@st.cache_resource
+def get_feature_names():
+    try:
+        # Get base features from UCI (dynamically parsed)
+        base_features = get_base_features()
+        
+        # Fallback if parsing fails
+        if not base_features or len(base_features) < 10:
+            base_features = ['radius', 'texture', 'perimeter', 'area', 'smoothness',
+                           'compactness', 'concavity', 'concave_points', 'symmetry', 'fractal_dimension']
+        
+        names_url = "https://archive.ics.uci.edu/ml/machine-learning-databases/breast-cancer-wisconsin/wdbc.names"
+        response = requests.get(names_url, verify=False)
+        
+        # Parse feature names from .names file
+        lines = response.text.split('\n')
+        feature_names = []
+        
+        for line in lines:
+            if ':' in line and any(x in line.lower() for x in base_features):
+                # Extract feature name from description line
+                parts = line.split(':')
+                if len(parts) > 0:
+                    feature_name = parts[0].strip().lower().replace(' ', '_')
+                    if feature_name and feature_name not in feature_names:
+                        feature_names.append(feature_name)
+        
+        # If parsing fails, generate default names
+        if len(feature_names) < 30:
+            feature_names = (
+                [f'mean_{f}' for f in base_features] +
+                [f'SE_{f}' for f in base_features] +
+                [f'worst_{f}' for f in base_features]
+            )
+        
+        return feature_names[:30]  # Return exactly 30 features
+    except Exception as e:
+        # Fallback: generate default names
+        base_features = ['radius', 'texture', 'perimeter', 'area', 'smoothness',
+                       'compactness', 'concavity', 'concave_points', 'symmetry', 'fractal_dimension']
+        return (
+            [f'mean_{f}' for f in base_features] +
+            [f'SE_{f}' for f in base_features] +
+            [f'worst_{f}' for f in base_features]
+        )
+
 models, scaler, results = load_models()
 X_test, y_test = load_test_data()
+feature_names = get_feature_names()
 
 # Sidebar
 st.sidebar.header("Configuration")
-selected_model = st.sidebar.selectbox(
-    "Select a Model:",
-    list(models.keys()),
-    index=0
-)
 
 # Create tabs
-tab1, tab2, tab3 = st.tabs(["📊 Model Metrics", "📈 Performance Comparison", "📁 Data Upload & Prediction"])
+tab1 = st.tabs(["📊 Complete Analysis"])[0]
 
-# Tab 1: Model Metrics
+# Main Content - All in one place
 with tab1:
-    st.header(f"Evaluation Metrics - {selected_model}")
+    st.header("ML Classification Models - Complete Analysis")
     
-    if results and selected_model in results:
-        col1, col2, col3 = st.columns(3)
+    # ===== SECTION 1: Model Analysis =====
+    st.subheader("1️⃣ Model Performance Metrics")
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        st.markdown("**Select Model**")
+        selected_model = st.selectbox(
+            "Choose a model to view details:",
+            list(models.keys()),
+            key="model_select",
+            label_visibility="collapsed"
+        )
         
-        metrics = results[selected_model]
+        if results and selected_model in results:
+            st.markdown("**📈 Metrics**")
+            metrics = results[selected_model]
+            
+            col_a, col_b, col_c = st.columns(3)
+            with col_a:
+                st.metric("Accuracy", f"{metrics['Accuracy']:.4f}")
+                st.metric("Precision", f"{metrics['Precision']:.4f}")
+            with col_b:
+                st.metric("AUC", f"{metrics['AUC']:.4f}")
+                st.metric("Recall", f"{metrics['Recall']:.4f}")
+            with col_c:
+                st.metric("F1", f"{metrics['F1']:.4f}")
+                st.metric("MCC", f"{metrics['MCC']:.4f}")
+    
+    with col2:
+        st.markdown("**All Models Comparison**")
+        if results:
+            results_df = pd.DataFrame(results).T
+            results_df = results_df.round(4)
+            st.dataframe(results_df, use_container_width=True)
+    
+    st.divider()
+    
+    # ===== SECTION 2: Confusion Matrices =====
+    st.subheader("2️⃣ Confusion Matrices for All Models")
+    st.markdown("""
+    **Components:**
+    - **TN:** Correctly predicted Benign | **FP:** Benign → Malignant (False Alarm)
+    - **FN:** Malignant → Benign (Missed) | **TP:** Correctly predicted Malignant
+    """)
+    
+    if X_test is not None and y_test is not None:
+        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+        axes = axes.flatten()
         
-        with col1:
-            st.metric("Accuracy", f"{metrics['Accuracy']:.4f}")
-            st.metric("Precision", f"{metrics['Precision']:.4f}")
+        model_names = list(models.keys())
+        for idx, model_name in enumerate(model_names):
+            model = models[model_name]
+            X_test_scaled = scaler.transform(X_test)
+            y_pred = model.predict(X_test_scaled)
+            cm = confusion_matrix(y_test, y_pred)
+            
+            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=axes[idx], 
+                       xticklabels=['Benign', 'Malignant'], 
+                       yticklabels=['Benign', 'Malignant'])
+            axes[idx].set_title(f'{model_name}')
+            axes[idx].set_ylabel('True Label')
+            axes[idx].set_xlabel('Predicted Label')
         
-        with col2:
-            st.metric("AUC Score", f"{metrics['AUC']:.4f}")
-            st.metric("Recall", f"{metrics['Recall']:.4f}")
-        
-        with col3:
-            st.metric("F1 Score", f"{metrics['F1']:.4f}")
-            st.metric("MCC Score", f"{metrics['MCC']:.4f}")
-        
-        # Display as table
-        st.subheader("Detailed Metrics Table")
-        metrics_df = pd.DataFrame([metrics]).T
-        metrics_df.columns = ["Score"]
-        st.dataframe(metrics_df.round(4))
+        plt.tight_layout()
+        st.pyplot(fig)
     else:
-        st.warning("Results not available for this model")
-
-# Tab 2: Performance Comparison
-with tab2:
-    st.header("Model Comparison")
+        st.warning("Could not load test data for confusion matrices")
     
-    if results:
-        # Create comparison dataframe
-        results_df = pd.DataFrame(results).T
-        results_df = results_df.round(4)
+    st.divider()
+    
+    # ===== SECTION 3: Predictions =====
+    st.subheader("3️⃣ Make Predictions on Custom Data")
+    
+    pred_col1, pred_col2 = st.columns([1, 3])
+    
+    with pred_col1:
+        st.markdown("**Select Model**")
+        prediction_model = st.selectbox(
+            "Choose a model for predictions:",
+            list(models.keys()),
+            key="pred_model",
+            label_visibility="collapsed"
+        )
+    
+    with pred_col2:
+        uploaded_file = st.file_uploader("Upload test data (CSV file)", type=['csv'], key='upload_data')
         
-        st.subheader("All Models Metrics Comparison")
-        st.dataframe(results_df)
-        
-        # Confusion Matrices Visualization
-        st.subheader("Confusion Matrices for All Models")
-        st.markdown("""
-        **Confusion Matrix Components:**
-        - **True Negatives (TN):** Correctly predicted Benign cases
-        - **False Positives (FP):** Benign cases incorrectly predicted as Malignant
-        - **False Negatives (FN):** Malignant cases missed (most critical in medical diagnosis)
-        - **True Positives (TP):** Correctly predicted Malignant cases
-        """)
-        
-        if X_test is not None and y_test is not None:
-            # Generate confusion matrices for all models
-            fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-            axes = axes.flatten()
-            
-            model_names = list(models.keys())
-            for idx, model_name in enumerate(model_names):
-                model = models[model_name]
-                X_test_scaled = scaler.transform(X_test)
-                y_pred = model.predict(X_test_scaled)
-                cm = confusion_matrix(y_test, y_pred)
+        if uploaded_file is not None:
+            try:
+                data = pd.read_csv(uploaded_file)
+                st.write("Data Preview:")
+                st.dataframe(data.head())
                 
-                sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=axes[idx], 
-                           xticklabels=['Benign', 'Malignant'], 
-                           yticklabels=['Benign', 'Malignant'])
-                axes[idx].set_title(f'{model_name}')
-                axes[idx].set_ylabel('True Label')
-                axes[idx].set_xlabel('Predicted Label')
+                # Check if data has correct number of features
+                if data.shape[1] == 30:
+                    st.success(f"✓ Dataset has {data.shape[0]} samples and {data.shape[1]} features")
+                    
+                    # Make predictions
+                    if prediction_model in models:
+                        X_scaled = scaler.transform(data)
+                        predictions = models[prediction_model].predict(X_scaled)
+                        probabilities = models[prediction_model].predict_proba(X_scaled)
+                        
+                        # Display results
+                        result_df = pd.DataFrame({
+                            'Prediction': predictions,
+                            'Probability Class 0': probabilities[:, 0],
+                            'Probability Class 1': probabilities[:, 1]
+                        })
+                        
+                        st.subheader(f"Predictions using {prediction_model}")
+                        st.dataframe(result_df)
+                else:
+                    st.error(f"❌ Dataset has {data.shape[1]} features. Expected 30 features for Breast Cancer dataset.")
             
-            plt.tight_layout()
-            st.pyplot(fig)
+            except Exception as e:
+                st.error(f"Error processing file: {str(e)}")
         else:
-            st.warning("Could not load test data for confusion matrices")
-
-# Tab 3: Data Upload & Prediction
-with tab3:
-    st.header("Predictions on Custom Data")
-    
-    uploaded_file = st.file_uploader("Upload test data (CSV file)", type=['csv'], key='upload_data')
-    
-    if uploaded_file is not None:
-        try:
-            data = pd.read_csv(uploaded_file)
-            st.write("Data Preview:")
-            st.dataframe(data.head())
+            st.info("📁 Upload a CSV file with 30 features to make predictions")
             
-            # Check if data has correct number of features
-            if data.shape[1] == 30:  # Breast cancer dataset has 30 features
-                st.success(f"✓ Dataset has {data.shape[0]} samples and {data.shape[1]} features")
+            st.markdown("**Sample Data Format:**")
+            st.markdown("""
+            - 30 features: mean radius, texture, perimeter, area, smoothness, compactness, concavity, concave points, symmetry, fractal dimension
+            - Plus SE (Standard Error) and worst (largest) versions of each
+            - CSV Format: Each row is a sample, each column is a feature
+            """)
+            
+            st.divider()
+            
+            # ===== SECTION 4: Download Sample Data =====
+            st.subheader("4️⃣ Download Sample Test Data")
+            if X_test is not None:
+                sample_data = X_test.sample(n=min(10, len(X_test)), random_state=42)
+                sample_data.columns = feature_names
+                sample_csv = sample_data.to_csv(index=False, header=True)
                 
-                # Make predictions
-                if selected_model in models:
-                    X_scaled = scaler.transform(data)
-                    predictions = models[selected_model].predict(X_scaled)
-                    probabilities = models[selected_model].predict_proba(X_scaled)
-                    
-                    # Display results
-                    result_df = pd.DataFrame({
-                        'Prediction': predictions,
-                        'Probability Class 0': probabilities[:, 0],
-                        'Probability Class 1': probabilities[:, 1]
-                    })
-                    
-                    st.subheader(f"Predictions using {selected_model}")
-                    st.dataframe(result_df)
-                    
-                    # Download results
-                    csv = result_df.to_csv(index=False)
-                    st.download_button(
-                        label="Download Predictions",
-                        data=csv,
-                        file_name="predictions.csv",
-                        mime="text/csv"
-                    )
+                st.download_button(
+                    label="📥 Download Sample Test Data (10 samples)",
+                    data=sample_csv,
+                    file_name="sample_test_data.csv",
+                    mime="text/csv",
+                    help="Download a sample CSV file with 10 test samples (30 features each)"
+                )
+                st.caption("✓ Sample data ready for testing predictions")
             else:
-                st.error(f"❌ Dataset has {data.shape[1]} features. Expected 30 features for Breast Cancer dataset.")
-        
-        except Exception as e:
-            st.error(f"Error processing file: {str(e)}")
-    else:
-        st.info("📁 Upload a CSV file with 30 features to make predictions")
-        
-        # Provide sample data info
-        st.subheader("Sample Test Data Format")
-        st.markdown("""
-        The test data should have 30 features corresponding to the Breast Cancer dataset:
-        - mean radius, texture, perimeter, area, smoothness, compactness, concavity, concave points, symmetry, fractal dimension
-        - SE (Standard Error) versions of the above
-        - worst (largest values) versions of the above
-        
-        **CSV Format:** Each row is a sample, each column is a feature (no header recommended)
-        """)
+                st.warning("Could not load sample data")
