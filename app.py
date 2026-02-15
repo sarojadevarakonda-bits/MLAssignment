@@ -47,7 +47,7 @@ st.set_page_config(
 )
 
 # Title and Description
-st.title("🤖 ML Classification Models - Breast Cancer Dataset")
+st.title("🤖 ML Classification Models")
 st.markdown("""
 This application demonstrates the performance of 6 different machine learning classification models
 trained on the Breast Cancer dataset.
@@ -166,6 +166,15 @@ feature_names = get_feature_names()
 # Sidebar
 st.sidebar.header("Configuration")
 
+# Model selector in sidebar
+st.sidebar.markdown("**🤖 Select Model**")
+selected_model = st.sidebar.selectbox(
+    "Choose a model to view details:",
+    list(models.keys()),
+    key="model_select",
+    label_visibility="collapsed"
+)
+
 # Create tabs
 tab1 = st.tabs(["📊 Complete Analysis"])[0]
 
@@ -175,38 +184,27 @@ with tab1:
     
     # ===== SECTION 1: Model Analysis =====
     st.subheader("1️⃣ Model Performance Metrics")
-    col1, col2 = st.columns([1, 2])
     
-    with col1:
-        st.markdown("**Select Model**")
-        selected_model = st.selectbox(
-            "Choose a model to view details:",
-            list(models.keys()),
-            key="model_select",
-            label_visibility="collapsed"
-        )
+    if results and selected_model in results:
+        st.markdown("**📈 Metrics for Selected Model**")
+        metrics = results[selected_model]
         
-        if results and selected_model in results:
-            st.markdown("**📈 Metrics**")
-            metrics = results[selected_model]
-            
-            col_a, col_b, col_c = st.columns(3)
-            with col_a:
-                st.metric("Accuracy", f"{metrics['Accuracy']:.4f}")
-                st.metric("Precision", f"{metrics['Precision']:.4f}")
-            with col_b:
-                st.metric("AUC", f"{metrics['AUC']:.4f}")
-                st.metric("Recall", f"{metrics['Recall']:.4f}")
-            with col_c:
-                st.metric("F1", f"{metrics['F1']:.4f}")
-                st.metric("MCC", f"{metrics['MCC']:.4f}")
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            st.metric("Accuracy", f"{metrics['Accuracy']:.4f}")
+            st.metric("Precision", f"{metrics['Precision']:.4f}")
+        with col_b:
+            st.metric("AUC", f"{metrics['AUC']:.4f}")
+            st.metric("Recall", f"{metrics['Recall']:.4f}")
+        with col_c:
+            st.metric("F1", f"{metrics['F1']:.4f}")
+            st.metric("MCC", f"{metrics['MCC']:.4f}")
     
-    with col2:
-        st.markdown("**All Models Comparison**")
-        if results:
-            results_df = pd.DataFrame(results).T
-            results_df = results_df.round(4)
-            st.dataframe(results_df, use_container_width=True)
+    st.markdown("**All Models Comparison**")
+    if results:
+        results_df = pd.DataFrame(results).T
+        results_df = results_df.round(4)
+        st.dataframe(results_df, use_container_width=True)
     
     st.divider()
     
@@ -243,79 +241,67 @@ with tab1:
     
     st.divider()
     
-    # ===== SECTION 3: Predictions =====
-    st.subheader("3️⃣ Make Predictions on Custom Data")
+    # ===== SECTION 3: Download Sample Data =====
+    st.subheader("3️⃣ Download Sample Test Data")
+    st.markdown("**Sample Data Format:**")
+    st.markdown("""
+    - 30 features: mean radius, texture, perimeter, area, smoothness, compactness, concavity, concave points, symmetry, fractal dimension
+    - Plus SE (Standard Error) and worst (largest) versions of each
+    - CSV Format: Each row is a sample, each column is a feature
+    """)
     
-    pred_col1, pred_col2 = st.columns([1, 3])
-    
-    with pred_col1:
-        st.markdown("**Select Model**")
-        prediction_model = st.selectbox(
-            "Choose a model for predictions:",
-            list(models.keys()),
-            key="pred_model",
-            label_visibility="collapsed"
-        )
-    
-    with pred_col2:
-        uploaded_file = st.file_uploader("Upload test data (CSV file)", type=['csv'], key='upload_data')
+    if X_test is not None:
+        sample_data = X_test.sample(n=min(10, len(X_test)), random_state=42)
+        sample_data.columns = feature_names
+        sample_csv = sample_data.to_csv(index=False, header=True)
         
-        if uploaded_file is not None:
-            try:
-                data = pd.read_csv(uploaded_file)
-                st.write("Data Preview:")
-                st.dataframe(data.head())
+        st.download_button(
+            label="📥 Download Sample Test Data",
+            data=sample_csv,
+            file_name="sample_test_data.csv",
+            mime="text/csv",
+            help="Download a sample CSV file"
+        )
+        st.caption("✓ Sample data ready for testing predictions")
+    else:
+        st.warning("Could not load sample data")
+    
+    st.divider()
+    
+    # ===== SECTION 4: Make Predictions =====
+    st.subheader("4️⃣ Make Predictions on Custom Data")
+    
+    uploaded_file = st.file_uploader("Upload test data (CSV file)", type=['csv'], key='upload_data')
+    
+    if uploaded_file is not None:
+        try:
+            data = pd.read_csv(uploaded_file)
+            st.write("Data Preview:")
+            st.dataframe(data.head())
+            
+            # Check if data has correct number of features
+            if data.shape[1] == 30:
+                st.success(f"✓ Dataset has {data.shape[0]} samples and {data.shape[1]} features")
                 
-                # Check if data has correct number of features
-                if data.shape[1] == 30:
-                    st.success(f"✓ Dataset has {data.shape[0]} samples and {data.shape[1]} features")
+                # Make predictions
+                if selected_model in models:
+                    X_scaled = scaler.transform(data)
+                    predictions = models[selected_model].predict(X_scaled)
+                    probabilities = models[selected_model].predict_proba(X_scaled)
                     
-                    # Make predictions
-                    if prediction_model in models:
-                        X_scaled = scaler.transform(data)
-                        predictions = models[prediction_model].predict(X_scaled)
-                        probabilities = models[prediction_model].predict_proba(X_scaled)
-                        
-                        # Display results
-                        result_df = pd.DataFrame({
-                            'Prediction': predictions,
-                            'Probability Class 0': probabilities[:, 0],
-                            'Probability Class 1': probabilities[:, 1]
-                        })
-                        
-                        st.subheader(f"Predictions using {prediction_model}")
-                        st.dataframe(result_df)
-                else:
-                    st.error(f"❌ Dataset has {data.shape[1]} features. Expected 30 features for Breast Cancer dataset.")
-            
-            except Exception as e:
-                st.error(f"Error processing file: {str(e)}")
-        else:
-            st.info("📁 Upload a CSV file with 30 features to make predictions")
-            
-            st.markdown("**Sample Data Format:**")
-            st.markdown("""
-            - 30 features: mean radius, texture, perimeter, area, smoothness, compactness, concavity, concave points, symmetry, fractal dimension
-            - Plus SE (Standard Error) and worst (largest) versions of each
-            - CSV Format: Each row is a sample, each column is a feature
-            """)
-            
-            st.divider()
-            
-            # ===== SECTION 4: Download Sample Data =====
-            st.subheader("4️⃣ Download Sample Test Data")
-            if X_test is not None:
-                sample_data = X_test.sample(n=min(10, len(X_test)), random_state=42)
-                sample_data.columns = feature_names
-                sample_csv = sample_data.to_csv(index=False, header=True)
-                
-                st.download_button(
-                    label="📥 Download Sample Test Data (10 samples)",
-                    data=sample_csv,
-                    file_name="sample_test_data.csv",
-                    mime="text/csv",
-                    help="Download a sample CSV file with 10 test samples (30 features each)"
-                )
-                st.caption("✓ Sample data ready for testing predictions")
+                    # Display results
+                    result_df = pd.DataFrame({
+                        'Prediction': predictions,
+                        'Probability Class 0': probabilities[:, 0],
+                        'Probability Class 1': probabilities[:, 1]
+                    })
+                    
+                    st.subheader(f"Predictions using {selected_model}")
+                    st.dataframe(result_df)
             else:
-                st.warning("Could not load sample data")
+                st.error(f"❌ Dataset has {data.shape[1]} features. Expected 30 features for Breast Cancer dataset.")
+        
+        except Exception as e:
+            st.error(f"Error processing file: {str(e)}")
+    else:
+        st.info("📁 Upload a CSV file with 30 features to make predictions")
