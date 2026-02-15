@@ -249,7 +249,7 @@ with tab1:
     """)
     
     if X_test is not None:
-        sample_data = X_test.sample(n=min(10, len(X_test)), random_state=42)
+        sample_data = X_test.sample(n=min(20, len(X_test)), random_state=42)
         sample_data.columns = feature_names
         sample_csv = sample_data.to_csv(index=False, header=True)
         
