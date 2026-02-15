@@ -180,8 +180,6 @@ tab1 = st.tabs(["📊 Complete Analysis"])[0]
 
 # Main Content - All in one place
 with tab1:
-    st.header("ML Classification Models - Complete Analysis")
-    
     # ===== SECTION 1: Model Analysis =====
     st.subheader("1️⃣ Model Performance Metrics")
     
